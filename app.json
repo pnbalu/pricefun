@@ -28,7 +28,15 @@
     },
     "plugins": [
       "expo-audio",
-      "expo-av"
+      "expo-av",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/icon.png",
+          "color": "#ffffff",
+          "defaultChannel": "default"
+        }
+      ]
     ]
   }
 }

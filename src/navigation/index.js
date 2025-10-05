@@ -2,6 +2,7 @@ import { NavigationContainer, DefaultTheme } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
+import { useTheme } from '../context/ThemeContext';
 import { AuthScreen } from '../screens/AuthScreen';
 import { ChatsScreen } from '../screens/ChatsScreen';
 import { ChatScreen } from '../screens/ChatScreen';
@@ -18,6 +19,7 @@ const Stack = createNativeStackNavigator();
 export function AppNavigator() {
   const [isAuthenticated, setIsAuthenticated] = useState(null);
   const [needsProfile, setNeedsProfile] = useState(false);
+  const { theme } = useTheme();
 
   useEffect(() => {
     const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
@@ -37,13 +39,40 @@ export function AppNavigator() {
     return () => {
       sub.subscription.unsubscribe();
     };
-  }, []);
+  }, [theme]);
 
   if (isAuthenticated === null) return null;
 
+  // Create custom navigation theme that matches our app theme
+  const navigationTheme = {
+    ...DefaultTheme,
+    colors: {
+      ...DefaultTheme.colors,
+      primary: theme.primary,
+      background: theme.surface,
+      card: theme.surface,
+      text: theme.text,
+      border: theme.border,
+      notification: theme.error,
+    },
+  };
+
   return (
-    <NavigationContainer theme={DefaultTheme}>
-      <Stack.Navigator initialRouteName={isAuthenticated ? (needsProfile ? 'Register' : 'Users') : 'Auth'}>
+    <NavigationContainer theme={navigationTheme}>
+      <Stack.Navigator 
+        initialRouteName={isAuthenticated ? (needsProfile ? 'Register' : 'Users') : 'Auth'}
+        screenOptions={{
+          headerStyle: {
+            backgroundColor: theme.surface,
+            borderBottomColor: theme.border,
+            borderBottomWidth: 1,
+          },
+          headerTintColor: theme.primary,
+          headerTitleStyle: {
+            color: theme.text,
+          },
+        }}
+      >
         {isAuthenticated ? (
           <>
             {needsProfile ? (

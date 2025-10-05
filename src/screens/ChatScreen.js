@@ -17,6 +17,8 @@ import { Video } from 'expo-av';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
 import { useTheme } from '../context/ThemeContext';
+import { NotificationService } from '../services/notificationService';
+import { AppState } from 'react-native';
 
 export function ChatScreen({ route }) {
   const { chatId } = route.params;
@@ -39,6 +41,7 @@ export function ChatScreen({ route }) {
   const [shouldAutoScroll, setShouldAutoScroll] = useState(true);
   const [showReactionModal, setShowReactionModal] = useState(false);
   const [selectedMessageForReaction, setSelectedMessageForReaction] = useState(null);
+  const [appState, setAppState] = useState(AppState.currentState);
   const recordingTimer = useRef(null);
   
   // Create audio recorder hook
@@ -86,10 +89,34 @@ export function ChatScreen({ route }) {
       setChatInfo(chat);
 
       if (chat.is_group) {
-        // Group chat - use group name
+        // Group chat - use group name with edit icon
         const title = chat.group_name || 'Group Chat';
         setChatTitle(title);
-        navigation.setOptions({ title });
+        navigation.setOptions({ 
+          title: title,
+          headerStyle: {
+            backgroundColor: theme.background,
+          },
+          headerTintColor: theme.text,
+          headerTitle: () => (
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <Text style={{ 
+                color: theme.text, 
+                fontSize: 18, 
+                fontWeight: '600',
+                marginRight: 8
+              }}>
+                {title}
+              </Text>
+              <TouchableOpacity 
+                onPress={() => navigation.navigate('GroupInfo', { chatId })} 
+                style={{ padding: 4 }}
+              >
+                <Ionicons name="create" size={18} color={theme.primary} />
+              </TouchableOpacity>
+            </View>
+          )
+        });
       } else {
         // One-on-one chat - get other participant
         const { data: participants } = await supabase
@@ -160,6 +187,17 @@ export function ChatScreen({ route }) {
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => setCurrentUserId(user?.id ?? null));
+
+    // Listen for app state changes
+    const handleAppStateChange = (nextAppState) => {
+      setAppState(nextAppState);
+    };
+
+    const subscription = AppState.addEventListener('change', handleAppStateChange);
+    
+    return () => {
+      subscription?.remove();
+    };
   }, []);
 
   useEffect(() => {
@@ -188,6 +226,33 @@ export function ChatScreen({ route }) {
           if (prev.some((m) => m.id === payload.new.id)) return prev;
           return [...prev, messageWithProfile];
         });
+
+            // Send notification if the message is not from current user and app is in background or inactive
+            const isFromCurrentUser = payload.new.author_id === currentUserId;
+            const shouldNotify = !isFromCurrentUser && (appState === 'background' || appState === 'inactive');
+            
+            console.log('🔔 Notification check:', {
+              isFromCurrentUser,
+              appState,
+              shouldNotify,
+              hasProfileData: !!profileData
+            });
+            
+            if (shouldNotify && profileData) {
+              const senderName = profileData.display_name || profileData.phone || 'Someone';
+              const messageContent = payload.new.content || '';
+              const messageType = payload.new.message_type || 'text';
+              
+              console.log('📱 Sending chat notification:', { senderName, messageContent, messageType });
+              
+              NotificationService.sendMessageNotification(
+                senderName,
+                messageContent,
+                chatId,
+                messageType
+              );
+            }
+
         setTimeout(() => {
           if (shouldAutoScroll && !isUserScrolling) {
             flatListRef.current?.scrollToEnd({ animated: true });
@@ -232,6 +297,12 @@ export function ChatScreen({ route }) {
     if (isSelectionMode) {
       navigation.setOptions({
         title: `${selectedMessages.size} selected`,
+          headerStyle: {
+            backgroundColor: theme.surface,
+            borderBottomColor: theme.border,
+            borderBottomWidth: 1,
+          },
+        headerTintColor: theme.text,
         headerLeft: () => (
           <TouchableOpacity onPress={toggleSelectionMode} style={{ padding: 8 }}>
             <Text style={{ color: theme.primary, fontSize: 16, fontWeight: '600' }}>Cancel</Text>
@@ -270,21 +341,17 @@ export function ChatScreen({ route }) {
     } else {
       navigation.setOptions({
         title: chatTitle,
+          headerStyle: {
+            backgroundColor: theme.surface,
+            borderBottomColor: theme.border,
+            borderBottomWidth: 1,
+          },
+        headerTintColor: theme.text,
         headerLeft: () => null,
         headerRight: () => (
-          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-            {isGroup && (
-              <TouchableOpacity 
-                onPress={() => navigation.navigate('GroupInfo', { chatId })} 
-                style={{ padding: 8, marginRight: 8 }}
-              >
-                <Ionicons name="information-circle" size={24} color={theme.primary} />
-              </TouchableOpacity>
-            )}
-            <TouchableOpacity onPress={toggleSelectionMode} style={{ padding: 8 }}>
-              <Text style={{ color: theme.primary, fontSize: 16, fontWeight: '600' }}>Select</Text>
-            </TouchableOpacity>
-          </View>
+          <TouchableOpacity onPress={toggleSelectionMode} style={{ padding: 8 }}>
+            <Text style={{ color: theme.primary, fontSize: 16, fontWeight: '600' }}>Select</Text>
+          </TouchableOpacity>
         ),
       });
     }

@@ -4,12 +4,15 @@ import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
 import { useTheme } from '../context/ThemeContext';
+import { NotificationService } from '../services/notificationService';
+import { AppState } from 'react-native';
 
 export function UsersScreen({ navigation }) {
   const { theme } = useTheme();
   const [rows, setRows] = useState([]);
   const [filteredRows, setFilteredRows] = useState([]);
   const [activeFilter, setActiveFilter] = useState('all'); // 'all', 'groups', 'users'
+  const [appState, setAppState] = useState(AppState.currentState);
 
   const load = useCallback(async () => {
     try {
@@ -192,6 +195,98 @@ export function UsersScreen({ navigation }) {
     setFilteredRows(filtered);
   }, [rows, activeFilter]);
 
+  // Listen for app state changes
+  useEffect(() => {
+    const handleAppStateChange = (nextAppState) => {
+      setAppState(nextAppState);
+    };
+
+    const subscription = AppState.addEventListener('change', handleAppStateChange);
+    
+    return () => {
+      subscription?.remove();
+    };
+  }, []);
+
+  // Global message listener for notifications
+  useEffect(() => {
+    const setupNotificationListener = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+    const channel = supabase
+      .channel('global-messages')
+      .on('postgres_changes', { 
+        event: 'INSERT', 
+        schema: 'public', 
+        table: 'messages' 
+      }, async (payload) => {
+        // Only send notification if app is in background or inactive
+        if (appState === 'background' || appState === 'inactive') {
+          const message = payload.new;
+          
+          // Check if this message is for a chat the user is part of
+          const { data: participant } = await supabase
+            .from('chat_participants')
+            .select('chat_id')
+            .eq('chat_id', message.chat_id)
+            .eq('user_id', user.id)
+            .single();
+
+          // Only notify if user is part of this chat and message is not from them
+          if (participant && message.author_id !== user.id) {
+            // Get sender info
+            const { data: sender } = await supabase
+              .from('profiles')
+              .select('display_name, phone')
+              .eq('id', message.author_id)
+              .single();
+
+            // Get chat info to determine if it's a group or individual chat
+            const { data: chat } = await supabase
+              .from('chats')
+              .select('is_group, group_name')
+              .eq('id', message.chat_id)
+              .single();
+
+                if (sender) {
+                  const senderName = sender.display_name || sender.phone || 'Someone';
+                  const messageContent = message.content || '';
+                  const messageType = message.message_type || 'text';
+                  
+                  // For group chats, include group name in notification
+                  let title = 'New Message';
+                  if (chat?.is_group) {
+                    title = `${chat.group_name || 'Group Chat'}`;
+                  }
+                  
+                  console.log('📱 Sending global notification:', { 
+                    title, 
+                    senderName, 
+                    messageContent, 
+                    messageType,
+                    appState 
+                  });
+                  
+                  await NotificationService.sendLocalNotification(title, `${senderName}: ${messageContent}`, {
+                    chatId: message.chat_id,
+                    messageType,
+                    senderName,
+                  });
+                }
+          }
+        }
+      })
+      .subscribe();
+
+      return () => {
+        supabase.removeChannel(channel);
+      };
+    };
+
+    setupNotificationListener();
+  }, [appState]);
+
   // Refresh data when screen comes into focus
   useFocusEffect(
     useCallback(() => {
@@ -308,11 +403,6 @@ export function UsersScreen({ navigation }) {
                   {item.phone && (
                     <Text style={[styles.subtitle, { color: theme.textSecondary }]}>
                       {item.phone}
-                    </Text>
-                  )}
-                  {item.about && (
-                    <Text style={[styles.about, { color: theme.textSecondary }]} numberOfLines={2}>
-                      {item.about}
                     </Text>
                   )}
                 </View>

@@ -3,6 +3,7 @@ import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
 import { useTheme, themes } from '../context/ThemeContext';
+import { NotificationService } from '../services/notificationService';
 import { useEffect, useState } from 'react';
 
 export function MenuScreen() {
@@ -29,6 +30,10 @@ export function MenuScreen() {
     } catch (error) {
       console.error('Error loading profile:', error);
     }
+  };
+
+  const testNotification = async () => {
+    await NotificationService.testNotification();
   };
 
   const logout = async () => {
@@ -140,6 +145,19 @@ export function MenuScreen() {
         {/* Spacer */}
         <View style={styles.spacer} />
       </ScrollView>
+
+      {/* Test Notification Button */}
+      <View style={styles.footerSection}>
+        <TouchableOpacity 
+          style={[styles.logoutButton, { backgroundColor: theme.primary }]} 
+          onPress={testNotification}
+        >
+          <View style={styles.logoutIconContainer}>
+            <Ionicons name="notifications" size={16} color="white" />
+          </View>
+          <Text style={styles.logoutText}>Test Notification</Text>
+        </TouchableOpacity>
+      </View>
 
       {/* Logout Button */}
       <View style={styles.footerSection}>
