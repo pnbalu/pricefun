@@ -158,9 +158,6 @@ export function ChatScreen({ route }) {
   // Cleanup audio on unmount
   useEffect(() => {
     return () => {
-      if (recording) {
-        recording.stopAndUnloadAsync();
-      }
       if (recordingTimer.current) {
         clearInterval(recordingTimer.current);
       }
