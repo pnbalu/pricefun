@@ -8,6 +8,8 @@ import { useTheme } from '../context/ThemeContext';
 export function UsersScreen({ navigation }) {
   const { theme } = useTheme();
   const [rows, setRows] = useState([]);
+  const [filteredRows, setFilteredRows] = useState([]);
+  const [activeFilter, setActiveFilter] = useState('all'); // 'all', 'groups', 'users'
 
   const load = useCallback(async () => {
     try {
@@ -26,6 +28,23 @@ export function UsersScreen({ navigation }) {
         return;
       }
 
+      // Get all groups the user is part of
+      const { data: groups, error: groupsError } = await supabase
+        .from('chats')
+        .select(`
+          id,
+          group_name,
+          group_description,
+          group_photo_url,
+          created_at
+        `)
+        .eq('is_group', true)
+        .order('created_at', { ascending: false });
+
+      if (groupsError) {
+        console.error('Error fetching groups:', groupsError);
+      }
+
       // For each profile, get unread count from direct chats
       const profilesWithUnread = await Promise.all(
         (profiles || []).map(async (profile) => {
@@ -39,17 +58,58 @@ export function UsersScreen({ navigation }) {
             return {
               ...profile,
               unread_count: chatData?.unread_count || 0,
+              type: 'user'
             };
           } catch (err) {
             return {
               ...profile,
               unread_count: 0,
+              type: 'user'
             };
           }
         })
       );
 
-      setRows(profilesWithUnread);
+      // Format groups data and get unread counts
+      const groupsWithUnread = await Promise.all(
+        (groups || []).map(async (group) => {
+          try {
+            const { data: chatData } = await supabase
+              .from('chats_view')
+              .select('unread_count')
+              .eq('id', group.id)
+              .single();
+
+            return {
+              id: group.id,
+              display_name: group.group_name || 'Group Chat',
+              phone: null,
+              about: group.group_description,
+              profile_photo_url: group.group_photo_url,
+              unread_count: chatData?.unread_count || 0,
+              type: 'group',
+              created_at: group.created_at
+            };
+          } catch (err) {
+            return {
+              id: group.id,
+              display_name: group.group_name || 'Group Chat',
+              phone: null,
+              about: group.group_description,
+              profile_photo_url: group.group_photo_url,
+              unread_count: 0,
+              type: 'group',
+              created_at: group.created_at
+            };
+          }
+        })
+      );
+
+      // Combine users and groups, sort by creation date
+      const combinedRows = [...profilesWithUnread, ...groupsWithUnread]
+        .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+
+      setRows(combinedRows);
     } catch (error) {
       console.error('Error in load function:', error);
     }
@@ -112,6 +172,26 @@ export function UsersScreen({ navigation }) {
     };
   }, [theme.primary, navigation, load]);
 
+  // Filter rows based on active filter
+  useEffect(() => {
+    let filtered = rows;
+    
+    switch (activeFilter) {
+      case 'groups':
+        filtered = rows.filter(item => item.type === 'group');
+        break;
+      case 'users':
+        filtered = rows.filter(item => item.type === 'user');
+        break;
+      case 'all':
+      default:
+        filtered = rows;
+        break;
+    }
+    
+    setFilteredRows(filtered);
+  }, [rows, activeFilter]);
+
   // Refresh data when screen comes into focus
   useFocusEffect(
     useCallback(() => {
@@ -127,13 +207,76 @@ export function UsersScreen({ navigation }) {
 
   return (
     <View style={{ flex: 1, backgroundColor: theme.background }}>
+      {/* Filter Buttons */}
+      <View style={[styles.filterContainer, { backgroundColor: theme.surface, borderBottomColor: theme.border }]}>
+        <TouchableOpacity
+          style={[
+            styles.filterButton,
+            activeFilter === 'all' && { backgroundColor: theme.primary }
+          ]}
+          onPress={() => setActiveFilter('all')}
+        >
+          <Text style={[
+            styles.filterButtonText,
+            { color: activeFilter === 'all' ? 'white' : theme.text }
+          ]}>
+            All
+          </Text>
+        </TouchableOpacity>
+        
+        <TouchableOpacity
+          style={[
+            styles.filterButton,
+            activeFilter === 'groups' && { backgroundColor: theme.primary }
+          ]}
+          onPress={() => setActiveFilter('groups')}
+        >
+          <Ionicons 
+            name="people" 
+            size={16} 
+            color={activeFilter === 'groups' ? 'white' : theme.text} 
+            style={{ marginRight: 4 }}
+          />
+          <Text style={[
+            styles.filterButtonText,
+            { color: activeFilter === 'groups' ? 'white' : theme.text }
+          ]}>
+            Groups
+          </Text>
+        </TouchableOpacity>
+        
+        <TouchableOpacity
+          style={[
+            styles.filterButton,
+            activeFilter === 'users' && { backgroundColor: theme.primary }
+          ]}
+          onPress={() => setActiveFilter('users')}
+        >
+          <Ionicons 
+            name="person" 
+            size={16} 
+            color={activeFilter === 'users' ? 'white' : theme.text} 
+            style={{ marginRight: 4 }}
+          />
+          <Text style={[
+            styles.filterButtonText,
+            { color: activeFilter === 'users' ? 'white' : theme.text }
+          ]}>
+            Users
+          </Text>
+        </TouchableOpacity>
+      </View>
+
       <FlatList
         contentContainerStyle={styles.list}
-        data={rows}
+        data={filteredRows}
         keyExtractor={(item) => item.id}
         renderItem={({ item }) => (
           <View style={[styles.userCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-            <TouchableOpacity onPress={() => startChat(item.phone)} style={styles.cardContent}>
+            <TouchableOpacity 
+              onPress={() => item.type === 'group' ? navigation.navigate('Chat', { chatId: item.id }) : startChat(item.phone)} 
+              style={styles.cardContent}
+            >
               <View style={styles.userInfo}>
                 {item.profile_photo_url ? (
                   <Image 
@@ -142,18 +285,31 @@ export function UsersScreen({ navigation }) {
                   />
                 ) : (
                   <View style={[styles.avatar, { backgroundColor: theme.primary }]}>
-                    <Text style={{ color: 'white', fontSize: 20, fontWeight: 'bold' }}>
-                      {(item.display_name || item.phone).charAt(0).toUpperCase()}
-                    </Text>
+                    {item.type === 'group' ? (
+                      <Ionicons name="people" size={24} color="white" />
+                    ) : (
+                      <Text style={{ color: 'white', fontSize: 20, fontWeight: 'bold' }}>
+                        {(item.display_name || item.phone).charAt(0).toUpperCase()}
+                      </Text>
+                    )}
                   </View>
                 )}
                 <View style={styles.userDetails}>
-                  <Text style={[styles.title, { color: theme.text }]}>
-                    {item.display_name || item.phone}
-                  </Text>
-                  <Text style={[styles.subtitle, { color: theme.textSecondary }]}>
-                    {item.phone}
-                  </Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                    <Text style={[styles.title, { color: theme.text }]}>
+                      {item.display_name || item.phone}
+                    </Text>
+                    {item.type === 'group' && (
+                      <View style={[styles.groupBadge, { backgroundColor: theme.primary + '20' }]}>
+                        <Text style={[styles.groupBadgeText, { color: theme.primary }]}>Group</Text>
+                      </View>
+                    )}
+                  </View>
+                  {item.phone && (
+                    <Text style={[styles.subtitle, { color: theme.textSecondary }]}>
+                      {item.phone}
+                    </Text>
+                  )}
                   {item.about && (
                     <Text style={[styles.about, { color: theme.textSecondary }]} numberOfLines={2}>
                       {item.about}
@@ -181,9 +337,19 @@ export function UsersScreen({ navigation }) {
           onPress={() => navigation.navigate('NewChat')}
         >
           <View style={[styles.tabIcon, { backgroundColor: theme.primary + '20' }]}>
-            <Ionicons name="add" size={16} color={theme.primary} />
+            <Ionicons name="person-add" size={16} color={theme.primary} />
           </View>
           <Text style={[styles.tabLabel, { color: theme.textSecondary }]}>New Chat</Text>
+        </TouchableOpacity>
+        
+        <TouchableOpacity 
+          style={styles.tabItem}
+          onPress={() => navigation.navigate('CreateGroup')}
+        >
+          <View style={[styles.tabIcon, { backgroundColor: theme.primary + '20' }]}>
+            <Ionicons name="people" size={16} color={theme.primary} />
+          </View>
+          <Text style={[styles.tabLabel, { color: theme.textSecondary }]}>New Group</Text>
         </TouchableOpacity>
         
         <TouchableOpacity 
@@ -211,6 +377,27 @@ export function UsersScreen({ navigation }) {
 }
 
 const styles = StyleSheet.create({
+  filterContainer: {
+    flexDirection: 'row',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    gap: 8,
+  },
+  filterButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    backgroundColor: 'transparent',
+    borderWidth: 1,
+    borderColor: 'transparent',
+  },
+  filterButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
   list: { padding: 16, gap: 12 },
   userCard: {
     marginBottom: 8,
@@ -253,6 +440,17 @@ const styles = StyleSheet.create({
     fontSize: 14,
     marginTop: 4,
     fontStyle: 'italic',
+  },
+  groupBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 8,
+    marginLeft: 8,
+  },
+  groupBadgeText: {
+    fontSize: 10,
+    fontWeight: '600',
+    textTransform: 'uppercase',
   },
   empty: { 
     padding: 24, 

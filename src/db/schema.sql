@@ -10,6 +10,10 @@ create table if not exists profiles (
 create table if not exists chats (
   id uuid primary key default gen_random_uuid(),
   is_group boolean default false,
+  group_name text,
+  group_description text,
+  group_photo_url text,
+  created_by uuid references auth.users(id),
   created_at timestamp with time zone default now()
 );
 
@@ -17,7 +21,7 @@ create table if not exists chats (
 create table if not exists chat_participants (
   chat_id uuid references chats(id) on delete cascade,
   user_id uuid references auth.users(id) on delete cascade,
-  role text default 'member',
+  role text default 'member', -- 'admin' or 'member'
   inserted_at timestamp with time zone default now(),
   last_read_at timestamp with time zone default now(),
   primary key (chat_id, user_id)
@@ -29,6 +33,7 @@ create table if not exists messages (
   chat_id uuid not null references chats(id) on delete cascade,
   author_id uuid not null references auth.users(id) on delete cascade,
   content text not null,
+  reactions text default '',
   created_at timestamp with time zone default now()
 );
 

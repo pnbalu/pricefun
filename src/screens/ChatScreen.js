@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { View, FlatList, TouchableOpacity, StyleSheet, KeyboardAvoidingView, Platform, Alert, Image, Text, TextInput } from 'react-native';
+import { View, FlatList, TouchableOpacity, StyleSheet, KeyboardAvoidingView, Platform, Alert, Image, Text, TextInput, Modal } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useHeaderHeight } from '@react-navigation/elements';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
@@ -27,6 +27,8 @@ export function ChatScreen({ route }) {
   const flatListRef = useRef(null);
   const [currentUserId, setCurrentUserId] = useState(null);
   const [chatTitle, setChatTitle] = useState('Chat');
+  const [isGroup, setIsGroup] = useState(false);
+  const [chatInfo, setChatInfo] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [recordingDuration, setRecordingDuration] = useState(0);
   const [isRecording, setIsRecording] = useState(false);
@@ -35,6 +37,8 @@ export function ChatScreen({ route }) {
   const [selectedMessages, setSelectedMessages] = useState(new Set());
   const [isUserScrolling, setIsUserScrolling] = useState(false);
   const [shouldAutoScroll, setShouldAutoScroll] = useState(true);
+  const [showReactionModal, setShowReactionModal] = useState(false);
+  const [selectedMessageForReaction, setSelectedMessageForReaction] = useState(null);
   const recordingTimer = useRef(null);
   
   // Create audio recorder hook
@@ -69,31 +73,50 @@ export function ChatScreen({ route }) {
     if (!user) return;
 
     try {
-      // Get the other participant's profile
-      const { data: participants } = await supabase
-        .from('chat_participants')
-        .select(`
-          profiles!inner(id, display_name, phone)
-        `)
-        .eq('chat_id', chatId)
-        .neq('user_id', user.id);
+      // First, check if this is a group chat
+      const { data: chat, error: chatError } = await supabase
+        .from('chats')
+        .select('*')
+        .eq('id', chatId)
+        .single();
 
-      if (participants && participants.length > 0) {
-        const otherProfile = participants[0].profiles;
-        const title = otherProfile.display_name || otherProfile.phone;
+      if (chatError) throw chatError;
+
+      setIsGroup(chat.is_group);
+      setChatInfo(chat);
+
+      if (chat.is_group) {
+        // Group chat - use group name
+        const title = chat.group_name || 'Group Chat';
         setChatTitle(title);
         navigation.setOptions({ title });
       } else {
-        // Fallback: try to get chat info from chats_view
-        const { data: chatInfo } = await supabase
-          .from('chats_view')
-          .select('title')
-          .eq('id', chatId)
-          .single();
-        
-        if (chatInfo) {
-          setChatTitle(chatInfo.title);
-          navigation.setOptions({ title: chatInfo.title });
+        // One-on-one chat - get other participant
+        const { data: participants } = await supabase
+          .from('chat_participants')
+          .select(`
+            profiles!inner(id, display_name, phone)
+          `)
+          .eq('chat_id', chatId)
+          .neq('user_id', user.id);
+
+        if (participants && participants.length > 0) {
+          const otherProfile = participants[0].profiles;
+          const title = otherProfile.display_name || otherProfile.phone;
+          setChatTitle(title);
+          navigation.setOptions({ title });
+        } else {
+          // Fallback: try to get chat info from chats_view
+          const { data: chatInfo } = await supabase
+            .from('chats_view')
+            .select('title')
+            .eq('id', chatId)
+            .single();
+          
+          if (chatInfo) {
+            setChatTitle(chatInfo.title);
+            navigation.setOptions({ title: chatInfo.title });
+          }
         }
       }
     } catch (error) {
@@ -103,12 +126,31 @@ export function ChatScreen({ route }) {
   }, [chatId, navigation]);
 
   const loadMessages = useCallback(async () => {
-    const { data } = await supabase
+    const { data: messages } = await supabase
       .from('messages')
       .select('*')
       .eq('chat_id', chatId)
       .order('created_at', { ascending: true });
-    setMessages(data ?? []);
+    
+    if (messages && messages.length > 0) {
+      // Fetch profile data for all unique authors
+      const authorIds = [...new Set(messages.map(m => m.author_id))];
+      const { data: profiles } = await supabase
+        .from('profiles')
+        .select('id, display_name, phone')
+        .in('id', authorIds);
+      
+      // Combine messages with profile data
+      const messagesWithProfiles = messages.map(message => ({
+        ...message,
+        profiles: profiles?.find(p => p.id === message.author_id) || null
+      }));
+      
+      setMessages(messagesWithProfiles);
+    } else {
+      setMessages([]);
+    }
+    
     setTimeout(() => {
       if (shouldAutoScroll && !isUserScrolling) {
         flatListRef.current?.scrollToEnd({ animated: false });
@@ -126,12 +168,25 @@ export function ChatScreen({ route }) {
 
     const channel = supabase
       .channel(`realtime:messages:${chatId}`)
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, (payload) => {
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, async (payload) => {
         // Debug: console.log('realtime payload', payload);
         if (payload.new?.chat_id !== chatId) return;
+        
+        // Fetch the profile information for the new message
+        const { data: profileData } = await supabase
+          .from('profiles')
+          .select('id, display_name, phone')
+          .eq('id', payload.new.author_id)
+          .single();
+        
+        const messageWithProfile = {
+          ...payload.new,
+          profiles: profileData || null
+        };
+        
         setMessages((prev) => {
           if (prev.some((m) => m.id === payload.new.id)) return prev;
-          return [...prev, payload.new];
+          return [...prev, messageWithProfile];
         });
         setTimeout(() => {
           if (shouldAutoScroll && !isUserScrolling) {
@@ -217,13 +272,23 @@ export function ChatScreen({ route }) {
         title: chatTitle,
         headerLeft: () => null,
         headerRight: () => (
-          <TouchableOpacity onPress={toggleSelectionMode} style={{ padding: 8 }}>
-            <Text style={{ color: theme.primary, fontSize: 16, fontWeight: '600' }}>Select</Text>
-          </TouchableOpacity>
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            {isGroup && (
+              <TouchableOpacity 
+                onPress={() => navigation.navigate('GroupInfo', { chatId })} 
+                style={{ padding: 8, marginRight: 8 }}
+              >
+                <Ionicons name="information-circle" size={24} color={theme.primary} />
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity onPress={toggleSelectionMode} style={{ padding: 8 }}>
+              <Text style={{ color: theme.primary, fontSize: 16, fontWeight: '600' }}>Select</Text>
+            </TouchableOpacity>
+          </View>
         ),
       });
     }
-  }, [isSelectionMode, selectedMessages.size, chatTitle, theme.primary, theme.error, theme.textSecondary, navigation]);
+  }, [isSelectionMode, selectedMessages.size, chatTitle, isGroup, chatId, theme.primary, theme.error, theme.textSecondary, navigation]);
 
   // Mark chat as read when mounting and when new messages arrive
   useEffect(() => {
@@ -763,6 +828,70 @@ export function ChatScreen({ route }) {
     }
   };
 
+  const showMessageOptions = (messageId, isMe) => {
+    Alert.alert(
+      'Message Options',
+      'Choose an action:',
+      [
+        {
+          text: 'Add Reaction',
+          onPress: () => showReactionPicker(messageId),
+        },
+        {
+          text: 'Delete Message',
+          style: 'destructive',
+          onPress: () => deleteMessage(messageId, isMe),
+        },
+        {
+          text: 'Cancel',
+          style: 'cancel',
+        },
+      ]
+    );
+  };
+
+  const showReactionPicker = (messageId) => {
+    setSelectedMessageForReaction(messageId);
+    setShowReactionModal(true);
+  };
+
+  const addReaction = async (messageId, emoji) => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.user) return;
+
+      // For now, we'll add the reaction to the message content
+      // In a full implementation, you'd have a separate reactions table
+      const message = messages.find(m => m.id === messageId);
+      if (!message) return;
+
+      const currentReactions = message.reactions || '';
+      const newReactions = currentReactions + emoji;
+
+      const { error } = await supabase
+        .from('messages')
+        .update({ reactions: newReactions })
+        .eq('id', messageId);
+
+      if (error) throw error;
+
+      setMessages(prev => 
+        prev.map(m => 
+          m.id === messageId 
+            ? { ...m, reactions: newReactions }
+            : m
+        )
+      );
+      
+      // Close the modal
+      setShowReactionModal(false);
+      setSelectedMessageForReaction(null);
+    } catch (error) {
+      console.error('Error adding reaction:', error);
+      Alert.alert('Error', 'Failed to add reaction');
+    }
+  };
+
   const deleteMessage = async (messageId, isAuthor) => {
     Alert.alert('Delete Message', 'Are you sure you want to delete this message?', [
       { text: 'Cancel', style: 'cancel' },
@@ -903,6 +1032,7 @@ export function ChatScreen({ route }) {
             const isVoice = message.message_type === 'voice';
             const isVideo = message.message_type === 'video';
             const isSelected = selectedMessages.has(message.id);
+            const senderName = message.profiles?.display_name || message.profiles?.phone || 'Unknown';
             
             return (
               <View key={message.id} style={styles.messageRow}>
@@ -921,7 +1051,7 @@ export function ChatScreen({ route }) {
                   !isMe && styles.messageContainerThem
                 ]}>
                   <TouchableOpacity
-                  onLongPress={isSelectionMode ? () => toggleMessageSelection(message.id) : () => deleteMessage(message.id, isMe)}
+                  onLongPress={isSelectionMode ? () => toggleMessageSelection(message.id) : () => showMessageOptions(message.id, isMe)}
                   onPress={isSelectionMode ? () => toggleMessageSelection(message.id) : undefined}
                   style={[
                     styles.msg, 
@@ -930,6 +1060,12 @@ export function ChatScreen({ route }) {
                     isSelected && { backgroundColor: theme.primary + '20' }
                   ]}
                 >
+                {/* Show sender name for group chats when it's not the current user */}
+                {isGroup && !isMe && (
+                  <Text style={[styles.senderName, { color: theme.primary }]}>
+                    {senderName}
+                  </Text>
+                )}
                 {isImage && message.image_url ? (
                   <View>
                     <Image
@@ -947,6 +1083,11 @@ export function ChatScreen({ route }) {
                     <Text style={[styles.imageCaption, { color: isMe ? 'white' : theme.text }]}>
                       {message.content}
                     </Text>
+                    {message.reactions && (
+                      <View style={styles.reactionsContainer}>
+                        <Text style={styles.reactionsText}>{message.reactions}</Text>
+                      </View>
+                    )}
                     <Text style={[styles.messageTime, { color: isMe ? 'rgba(255,255,255,0.7)' : theme.textSecondary }]}>
                       {formatTime(message.created_at)}
                     </Text>
@@ -993,6 +1134,11 @@ export function ChatScreen({ route }) {
                         </View>
                       </View>
                     </TouchableOpacity>
+                    {message.reactions && (
+                      <View style={styles.reactionsContainer}>
+                        <Text style={styles.reactionsText}>{message.reactions}</Text>
+                      </View>
+                    )}
                     <Text style={[styles.messageTime, { color: isMe ? 'rgba(255,255,255,0.7)' : theme.textSecondary }]}>
                       {formatTime(message.created_at)}
                     </Text>
@@ -1010,6 +1156,11 @@ export function ChatScreen({ route }) {
                     <Text style={[styles.videoCaption, { color: isMe ? 'white' : theme.text }]}>
                       {message.content}
                     </Text>
+                    {message.reactions && (
+                      <View style={styles.reactionsContainer}>
+                        <Text style={styles.reactionsText}>{message.reactions}</Text>
+                      </View>
+                    )}
                     <Text style={[styles.messageTime, { color: isMe ? 'rgba(255,255,255,0.7)' : theme.textSecondary }]}>
                       {formatTime(message.created_at)}
                     </Text>
@@ -1019,6 +1170,11 @@ export function ChatScreen({ route }) {
                     <Text style={[isMe ? styles.textMe : styles.textThem, { color: isMe ? 'white' : theme.text }]}>
                       {message.content}
                     </Text>
+                    {message.reactions && (
+                      <View style={styles.reactionsContainer}>
+                        <Text style={styles.reactionsText}>{message.reactions}</Text>
+                      </View>
+                    )}
                     <Text style={[styles.messageTime, { color: isMe ? 'rgba(255,255,255,0.7)' : theme.textSecondary }]}>
                       {formatTime(message.created_at)}
                     </Text>
@@ -1097,6 +1253,37 @@ export function ChatScreen({ route }) {
           </View>
         )}
       </KeyboardAvoidingView>
+
+      {/* Reaction Picker Modal */}
+      <Modal
+        visible={showReactionModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowReactionModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.reactionModal, { backgroundColor: theme.surface }]}>
+            <Text style={[styles.modalTitle, { color: theme.text }]}>Add Reaction</Text>
+            <View style={styles.reactionGrid}>
+              {['❤️', '😂', '😮', '😢', '😡', '👍', '👎', '🎉'].map((emoji) => (
+                <TouchableOpacity
+                  key={emoji}
+                  style={[styles.reactionButton, { backgroundColor: theme.background }]}
+                  onPress={() => addReaction(selectedMessageForReaction, emoji)}
+                >
+                  <Text style={styles.reactionEmoji}>{emoji}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            <TouchableOpacity
+              style={[styles.cancelButton, { backgroundColor: theme.textSecondary }]}
+              onPress={() => setShowReactionModal(false)}
+            >
+              <Text style={styles.cancelButtonText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -1105,6 +1292,12 @@ const styles = StyleSheet.create({
   list: { 
     padding: 12,
     flexGrow: 1,
+  },
+  senderName: {
+    fontSize: 12,
+    fontWeight: '600',
+    marginBottom: 4,
+    alignSelf: 'flex-start',
   },
   messageTime: {
     fontSize: 10,
@@ -1206,6 +1399,20 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
     marginTop: 1
   },
+  reactionsContainer: {
+    marginTop: 4,
+    marginBottom: 2,
+    flexDirection: 'row',
+    justifyContent: 'flex-end'
+  },
+  reactionsText: {
+    fontSize: 16,
+    backgroundColor: 'rgba(0,0,0,0.1)',
+    borderRadius: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    overflow: 'hidden'
+  },
   voiceMessage: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1245,6 +1452,55 @@ const styles = StyleSheet.create({
   voiceBar4: { height: 10 },
   textMe: { color: 'white' },
   textThem: {},
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  reactionModal: {
+    width: '80%',
+    maxWidth: 300,
+    borderRadius: 16,
+    padding: 20,
+    alignItems: 'center',
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    marginBottom: 20,
+  },
+  reactionGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    gap: 12,
+    marginBottom: 20,
+  },
+  reactionButton: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+  },
+  reactionEmoji: {
+    fontSize: 24,
+  },
+  cancelButton: {
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 20,
+    minWidth: 100,
+    alignItems: 'center',
+  },
+  cancelButtonText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: '600',
+  },
 });
 
 

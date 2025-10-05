@@ -10,6 +10,8 @@ import { UsersScreen } from '../screens/UsersScreen';
 import { RegisterScreen } from '../screens/RegisterScreen';
 import { MenuScreen } from '../screens/MenuScreen';
 import { ProfileScreen } from '../screens/ProfileScreen';
+import { CreateGroupScreen } from '../screens/CreateGroupScreen';
+import { GroupInfoScreen } from '../screens/GroupInfoScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -53,6 +55,8 @@ export function AppNavigator() {
                 <Stack.Screen name="Profile" component={ProfileScreen} options={{ title: 'Profile' }} />
                 <Stack.Screen name="Chat" component={ChatScreen} options={{ title: 'Chat' }} />
                 <Stack.Screen name="NewChat" component={NewChatScreen} options={{ title: 'New chat' }} />
+                <Stack.Screen name="CreateGroup" component={CreateGroupScreen} options={{ title: 'New Group' }} />
+                <Stack.Screen name="GroupInfo" component={GroupInfoScreen} options={{ title: 'Group Info' }} />
                 <Stack.Screen name="Menu" component={MenuScreen} options={{ title: 'Menu' }} />
               </>
             )}
