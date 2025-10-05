@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { View, FlatList, TouchableOpacity, StyleSheet, Text, Image } from 'react-native';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
+import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
 import { useTheme } from '../context/ThemeContext';
 
@@ -58,13 +59,31 @@ export function UsersScreen({ navigation }) {
     load();
     navigation.setOptions({
       headerLeft: () => (
-        <TouchableOpacity onPress={() => navigation.navigate('Menu')}>
-          <Text style={{ color: theme.primary, fontWeight: '700', fontSize: 18 }}>☰</Text>
+        <TouchableOpacity 
+          onPress={() => navigation.navigate('Menu')} 
+          style={{ 
+            padding: 8, 
+            justifyContent: 'center', 
+            alignItems: 'center',
+            minWidth: 44,
+            minHeight: 44
+          }}
+        >
+          <Ionicons name="menu" size={22} color={theme.primary} />
         </TouchableOpacity>
       ),
       headerRight: () => (
-        <TouchableOpacity onPress={() => navigation.navigate('NewChat')}>
-          <Text style={{ color: theme.primary, fontWeight: '700' }}>Add</Text>
+        <TouchableOpacity 
+          onPress={() => navigation.navigate('NewChat')} 
+          style={{ 
+            padding: 8, 
+            justifyContent: 'center', 
+            alignItems: 'center',
+            minWidth: 44,
+            minHeight: 44
+          }}
+        >
+          <Ionicons name="add" size={24} color={theme.primary} />
         </TouchableOpacity>
       ),
     });
@@ -155,30 +174,37 @@ export function UsersScreen({ navigation }) {
         )}
       />
       
-      {/* Footer */}
-      <View style={[styles.footer, { backgroundColor: theme.surface, borderTopColor: theme.border }]}>
-        <View style={styles.footerContent}>
-          <TouchableOpacity 
-            style={[styles.footerIconButton, { backgroundColor: theme.primary }]}
-            onPress={() => navigation.navigate('NewChat')}
-          >
-            <Text style={[styles.footerIconText, { color: 'white' }]}>➕</Text>
-          </TouchableOpacity>
-          
-          <TouchableOpacity 
-            style={[styles.footerIconButton, { backgroundColor: theme.primary }]}
-            onPress={() => navigation.navigate('Profile')}
-          >
-            <Text style={[styles.footerIconText, { color: 'white' }]}>👤</Text>
-          </TouchableOpacity>
-          
-          <TouchableOpacity 
-            style={[styles.footerIconButton, { backgroundColor: theme.primary }]}
-            onPress={() => navigation.navigate('Menu')}
-          >
-            <Text style={[styles.footerIconText, { color: 'white' }]}>⚙️</Text>
-          </TouchableOpacity>
-        </View>
+      {/* Bottom Tab Bar */}
+      <View style={[styles.bottomTabBar, { backgroundColor: theme.surface, borderTopColor: theme.border }]}>
+        <TouchableOpacity 
+          style={styles.tabItem}
+          onPress={() => navigation.navigate('NewChat')}
+        >
+          <View style={[styles.tabIcon, { backgroundColor: theme.primary + '20' }]}>
+            <Ionicons name="add" size={16} color={theme.primary} />
+          </View>
+          <Text style={[styles.tabLabel, { color: theme.textSecondary }]}>New Chat</Text>
+        </TouchableOpacity>
+        
+        <TouchableOpacity 
+          style={styles.tabItem}
+          onPress={() => navigation.navigate('Profile')}
+        >
+          <View style={[styles.tabIcon, { backgroundColor: theme.primary + '20' }]}>
+            <Ionicons name="person" size={16} color={theme.primary} />
+          </View>
+          <Text style={[styles.tabLabel, { color: theme.textSecondary }]}>Profile</Text>
+        </TouchableOpacity>
+        
+        <TouchableOpacity 
+          style={styles.tabItem}
+          onPress={() => navigation.navigate('Menu')}
+        >
+          <View style={[styles.tabIcon, { backgroundColor: theme.primary + '20' }]}>
+            <Ionicons name="settings" size={16} color={theme.primary} />
+          </View>
+          <Text style={[styles.tabLabel, { color: theme.textSecondary }]}>Menu</Text>
+        </TouchableOpacity>
       </View>
     </View>
   );
@@ -248,37 +274,39 @@ const styles = StyleSheet.create({
     fontWeight: '700', 
     fontSize: 12 
   },
-  footer: {
-    borderTopWidth: 1,
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 8,
-  },
-  footerContent: {
+  bottomTabBar: {
     flexDirection: 'row',
-    justifyContent: 'space-around',
-    alignItems: 'center',
+    borderTopWidth: StyleSheet.hairlineWidth,
+    paddingTop: 8,
+    paddingBottom: 12,
+    paddingHorizontal: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
   },
-  footerIconButton: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
+  tabItem: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: 4,
+  },
+  tabIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 3,
+    marginBottom: 4,
   },
-  footerIconText: {
-    fontSize: 24,
-    color: 'white',
-    fontWeight: 'bold',
+  tabIconText: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  tabLabel: {
+    fontSize: 10,
+    fontWeight: '500',
+    textAlign: 'center',
   },
 });
 

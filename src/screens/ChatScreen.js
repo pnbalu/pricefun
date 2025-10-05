@@ -6,6 +6,7 @@ import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
 import { Camera } from 'expo-camera';
 import { Audio, Video } from 'expo-av';
+import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
 import { useTheme } from '../context/ThemeContext';
 
@@ -368,33 +369,33 @@ export function ChatScreen({ route }) {
   };
 
   const showMediaPicker = () => {
-    Alert.alert(
-      'Choose Media',
-      'What would you like to send?',
-      [
-        {
-          text: '📷 Take Photo',
-          onPress: takePhoto,
-        },
-        {
-          text: '🖼️ Photo Library',
-          onPress: pickImageFromLibrary,
-        },
-        {
-          text: '🎥 Record Video',
-          onPress: takeVideo,
-        },
-        {
-          text: '📹 Video Library',
-          onPress: pickVideoFromLibrary,
-        },
-        {
-          text: 'Cancel',
-          style: 'cancel',
-        },
-      ],
-      { cancelable: true }
-    );
+      Alert.alert(
+        'Choose Media',
+        'What would you like to send?',
+        [
+          {
+            text: 'Take Photo',
+            onPress: takePhoto,
+          },
+          {
+            text: 'Photo Library',
+            onPress: pickImageFromLibrary,
+          },
+          {
+            text: 'Record Video',
+            onPress: takeVideo,
+          },
+          {
+            text: 'Video Library',
+            onPress: pickVideoFromLibrary,
+          },
+          {
+            text: 'Cancel',
+            style: 'cancel',
+          },
+        ],
+        { cancelable: true }
+      );
   };
 
   const uploadImage = async (asset) => {
@@ -415,7 +416,7 @@ export function ChatScreen({ route }) {
         id: tempId,
         chat_id: chatId,
         author_id: authorId,
-        content: 'Uploading image...',
+                content: 'Uploading image...',
         message_type: 'image',
         image_url: asset.uri,
         image_width: asset.width,
@@ -457,7 +458,7 @@ export function ChatScreen({ route }) {
         .insert({
           chat_id: chatId,
           author_id: authorId,
-          content: '📷 Image',
+          content: 'Image',
           message_type: 'image',
           image_url: publicUrl,
           image_width: asset.width,
@@ -557,7 +558,7 @@ export function ChatScreen({ route }) {
         id: tempId,
         chat_id: chatId,
         author_id: authorId,
-        content: `🎤 ${duration}s`,
+        content: `Voice ${duration}s`,
         message_type: 'voice',
         voice_url: uri,
         voice_duration: duration,
@@ -598,7 +599,7 @@ export function ChatScreen({ route }) {
         .insert({
           chat_id: chatId,
           author_id: authorId,
-          content: `🎤 ${duration}s`,
+          content: `Voice ${duration}s`,
           message_type: 'voice',
           voice_url: publicUrl,
           voice_duration: duration,
@@ -643,7 +644,7 @@ export function ChatScreen({ route }) {
         id: tempId,
         chat_id: chatId,
         author_id: authorId,
-        content: 'Uploading video...',
+                content: 'Uploading video...',
         message_type: 'video',
         video_url: asset.uri,
         video_duration: Math.round(asset.duration || 0),
@@ -684,7 +685,7 @@ export function ChatScreen({ route }) {
         .insert({
           chat_id: chatId,
           author_id: authorId,
-          content: `🎥 ${Math.round(asset.duration || 0)}s`,
+          content: `Video ${Math.round(asset.duration || 0)}s`,
           message_type: 'video',
           video_url: publicUrl,
           video_duration: Math.round(asset.duration || 0),
@@ -948,9 +949,11 @@ export function ChatScreen({ route }) {
                       onPress={isSelectionMode ? () => toggleMessageSelection(message.id) : () => playVoiceMessage(message.voice_url, message.id)}
                       onLongPress={() => toggleMessageSelection(message.id)}
                     >
-                      <Text style={[styles.voiceIcon, { color: isMe ? 'white' : theme.text }]}>
-                        {playingAudio === message.id ? '⏸️' : '▶️'}
-                      </Text>
+                      <Ionicons 
+                        name={playingAudio === message.id ? 'pause' : 'play'} 
+                        size={20} 
+                        color={isMe ? 'white' : theme.text} 
+                      />
                       <View style={styles.voiceInfo}>
                         <Text style={[styles.voiceDuration, { color: isMe ? 'white' : theme.text }]}>
                           {message.voice_duration}s {playingAudio === message.id ? '(playing)' : ''}
@@ -1027,7 +1030,7 @@ export function ChatScreen({ route }) {
                 disabled={uploading || isRecording}
                 style={[styles.iconButton, { backgroundColor: theme.surface }]}
               >
-                <Text style={{ fontSize: 20, color: theme.primary }}>📎</Text>
+                <Ionicons name="attach" size={20} color={theme.primary} />
               </TouchableOpacity>
               
               {isRecording ? (
@@ -1046,7 +1049,7 @@ export function ChatScreen({ route }) {
                     disabled={uploading}
                     style={[styles.iconButton, { backgroundColor: theme.surface }]}
                   >
-                    <Text style={{ fontSize: 20, color: theme.primary }}>🎤</Text>
+                    <Ionicons name="mic" size={20} color={theme.primary} />
                   </TouchableOpacity>
                   
                   <TextInput
@@ -1074,9 +1077,11 @@ export function ChatScreen({ route }) {
                       }
                     ]}
                   >
-                    <Text style={{ fontSize: 20, color: 'white' }}>
-                      {uploading ? '⏳' : '📤'}
-                    </Text>
+                    <Ionicons 
+                      name={uploading ? 'hourglass' : 'send'} 
+                      size={20} 
+                      color="white" 
+                    />
                   </TouchableOpacity>
                 </>
               )}
@@ -1173,44 +1178,44 @@ const styles = StyleSheet.create({
     width: 200, 
     maxWidth: '100%', 
     borderRadius: 8, 
-    marginBottom: 4 
+    marginBottom: 1 
   },
   imageCaption: { 
     fontSize: 12, 
     fontStyle: 'italic',
-    marginTop: 4
+    marginTop: 1
   },
   videoMessage: { 
     width: 200, 
     maxWidth: '100%', 
     height: 150,
     borderRadius: 8, 
-    marginBottom: 4 
+    marginBottom: 1 
   },
   videoCaption: { 
     fontSize: 12, 
     fontStyle: 'italic',
-    marginTop: 4
+    marginTop: 1
   },
   voiceMessage: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 8,
-    paddingHorizontal: 12,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
     borderRadius: 8,
     backgroundColor: 'rgba(0,0,0,0.1)',
     minWidth: 120
   },
   voiceIcon: { 
     fontSize: 20, 
-    marginRight: 12 
+    marginRight: 6 
   },
   voiceInfo: { 
     flex: 1 
   },
   voiceDuration: { 
     fontSize: 12, 
-    marginBottom: 4 
+    marginBottom: 1 
   },
   voiceWaveform: {
     flexDirection: 'row',
