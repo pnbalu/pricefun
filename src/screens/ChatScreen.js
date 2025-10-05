@@ -5,7 +5,8 @@ import { useHeaderHeight } from '@react-navigation/elements';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
 import { Camera } from 'expo-camera';
-import { Audio, Video } from 'expo-av';
+import { AudioPlayer } from 'expo-audio';
+import { VideoView } from 'expo-video';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
 import { useTheme } from '../context/ThemeContext';
@@ -488,19 +489,19 @@ export function ChatScreen({ route }) {
 
   const startRecording = async () => {
     try {
-      const { status } = await Audio.requestPermissionsAsync();
+      const { status } = await AudioPlayer.requestPermissionsAsync();
       if (status !== 'granted') {
         Alert.alert('Permission needed', 'Please grant microphone permissions to record voice messages.');
         return;
       }
 
-      await Audio.setAudioModeAsync({
+      await AudioPlayer.setAudioModeAsync({
         allowsRecordingIOS: true,
         playsInSilentModeIOS: true,
       });
 
-      const { recording } = await Audio.Recording.createAsync(
-        Audio.RecordingOptionsPresets.HIGH_QUALITY
+      const { recording } = await AudioPlayer.Recording.createAsync(
+        AudioPlayer.RecordingOptionsPresets.HIGH_QUALITY
       );
       
       setRecording(recording);
@@ -723,7 +724,7 @@ export function ChatScreen({ route }) {
       console.log('Playing voice message:', uri);
 
       // Set audio mode for playback
-      await Audio.setAudioModeAsync({
+      await AudioPlayer.setAudioModeAsync({
         allowsRecordingIOS: false,
         playsInSilentModeIOS: true,
         shouldDuckAndroid: true,
@@ -732,7 +733,7 @@ export function ChatScreen({ route }) {
 
       setPlayingAudio(messageId);
       
-      const { sound } = await Audio.Sound.createAsync(
+      const { sound } = await AudioPlayer.Sound.createAsync(
         { uri },
         { shouldPlay: true },
         (status) => {
@@ -987,21 +988,21 @@ export function ChatScreen({ route }) {
                   </View>
                 ) : isVideo && message.video_url ? (
                   <View>
-                    <TouchableOpacity 
-                      onPress={isSelectionMode ? () => toggleMessageSelection(message.id) : undefined}
-                      onLongPress={() => toggleMessageSelection(message.id)}
-                    >
-                      <Video
-                        source={{ uri: message.video_url }}
-                        style={styles.videoMessage}
-                        useNativeControls
-                        resizeMode="contain"
-                        shouldPlay={false}
-                      />
-                      <Text style={[styles.videoCaption, { color: isMe ? 'white' : theme.text }]}>
-                        {message.content}
-                      </Text>
-                    </TouchableOpacity>
+                            <TouchableOpacity 
+                              onPress={isSelectionMode ? () => toggleMessageSelection(message.id) : undefined}
+                              onLongPress={() => toggleMessageSelection(message.id)}
+                            >
+                              <VideoView
+                                source={{ uri: message.video_url }}
+                                style={styles.videoMessage}
+                                nativeControls
+                                contentFit="contain"
+                                shouldPlay={false}
+                              />
+                              <Text style={[styles.videoCaption, { color: isMe ? 'white' : theme.text }]}>
+                                {message.content}
+                              </Text>
+                            </TouchableOpacity>
                     <Text style={[styles.messageTime, { color: isMe ? 'rgba(255,255,255,0.7)' : theme.textSecondary }]}>
                       {formatTime(message.created_at)}
                     </Text>
