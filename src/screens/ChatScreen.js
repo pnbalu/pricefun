@@ -5,8 +5,15 @@ import { useHeaderHeight } from '@react-navigation/elements';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
 import { Camera } from 'expo-camera';
-import { AudioPlayer } from 'expo-audio';
-import { VideoView } from 'expo-video';
+import { 
+  createAudioPlayer, 
+  useAudioRecorder, 
+  setAudioModeAsync, 
+  requestRecordingPermissionsAsync,
+  getRecordingPermissionsAsync,
+  RecordingPresets 
+} from 'expo-audio';
+import { Video } from 'expo-av';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
 import { useTheme } from '../context/ThemeContext';
@@ -21,7 +28,6 @@ export function ChatScreen({ route }) {
   const [currentUserId, setCurrentUserId] = useState(null);
   const [chatTitle, setChatTitle] = useState('Chat');
   const [uploading, setUploading] = useState(false);
-  const [recording, setRecording] = useState(null);
   const [recordingDuration, setRecordingDuration] = useState(0);
   const [isRecording, setIsRecording] = useState(false);
   const [playingAudio, setPlayingAudio] = useState(null);
@@ -30,6 +36,11 @@ export function ChatScreen({ route }) {
   const [isUserScrolling, setIsUserScrolling] = useState(false);
   const [shouldAutoScroll, setShouldAutoScroll] = useState(true);
   const recordingTimer = useRef(null);
+  
+  // Create audio recorder hook
+  const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY, (status) => {
+    console.log('Recording status:', status);
+  });
   const headerHeight = useHeaderHeight();
 
   const formatTime = (dateString) => {
@@ -489,22 +500,25 @@ export function ChatScreen({ route }) {
 
   const startRecording = async () => {
     try {
-      const { status } = await AudioPlayer.requestPermissionsAsync();
+      const { status } = await getRecordingPermissionsAsync();
       if (status !== 'granted') {
-        Alert.alert('Permission needed', 'Please grant microphone permissions to record voice messages.');
-        return;
+        const { granted } = await requestRecordingPermissionsAsync();
+        if (!granted) {
+          Alert.alert('Permission needed', 'Please grant microphone permissions to record voice messages.');
+          return;
+        }
       }
 
-      await AudioPlayer.setAudioModeAsync({
-        allowsRecordingIOS: true,
-        playsInSilentModeIOS: true,
+      await setAudioModeAsync({
+        playsInSilentMode: true,
+        shouldPlayInBackground: true,
+        interruptionModeAndroid: 'duckOthers',
+        interruptionMode: 'mixWithOthers',
+        allowsRecording: true,
       });
 
-      const { recording } = await AudioPlayer.Recording.createAsync(
-        AudioPlayer.RecordingOptionsPresets.HIGH_QUALITY
-      );
-      
-      setRecording(recording);
+      await recorder.prepareToRecordAsync();
+      recorder.record();
       setIsRecording(true);
       setRecordingDuration(0);
 
@@ -520,15 +534,14 @@ export function ChatScreen({ route }) {
   };
 
   const stopRecording = async () => {
-    if (!recording) return;
+    if (!isRecording) return;
 
     try {
       setIsRecording(false);
       clearInterval(recordingTimer.current);
       
-      await recording.stopAndUnloadAsync();
-      const uri = recording.getURI();
-      setRecording(null);
+      await recorder.stop();
+      const uri = recorder.uri;
       
       if (uri && recordingDuration > 0) {
         await uploadVoiceMessage(uri, recordingDuration);
@@ -645,7 +658,7 @@ export function ChatScreen({ route }) {
         id: tempId,
         chat_id: chatId,
         author_id: authorId,
-                content: 'Uploading video...',
+        content: 'Uploading video...',
         message_type: 'video',
         video_url: asset.uri,
         video_duration: Math.round(asset.duration || 0),
@@ -664,7 +677,7 @@ export function ChatScreen({ route }) {
         type: 'video/mp4',
         name: fileName,
       });
-
+      
       const { data: uploadData, error: uploadError } = await supabase.storage
         .from('chat-video')
         .upload(fileName, formData, {
@@ -724,26 +737,26 @@ export function ChatScreen({ route }) {
       console.log('Playing voice message:', uri);
 
       // Set audio mode for playback
-      await AudioPlayer.setAudioModeAsync({
-        allowsRecordingIOS: false,
-        playsInSilentModeIOS: true,
-        shouldDuckAndroid: true,
-        playThroughEarpieceAndroid: false,
+      await setAudioModeAsync({
+        playsInSilentMode: true,
+        shouldPlayInBackground: true,
+        interruptionModeAndroid: 'duckOthers',
+        interruptionMode: 'mixWithOthers',
       });
 
       setPlayingAudio(messageId);
       
-      const { sound } = await AudioPlayer.Sound.createAsync(
-        { uri },
-        { shouldPlay: true },
-        (status) => {
-          console.log('Audio status:', status);
-          if (status.didJustFinish) {
-            setPlayingAudio(null);
-            sound.unloadAsync();
-          }
+      const audioPlayer = createAudioPlayer(uri);
+      
+      audioPlayer.addListener('statusUpdate', (status) => {
+        console.log('Audio status:', status);
+        if (status.isLoaded && status.didJustFinish) {
+          setPlayingAudio(null);
+          audioPlayer.remove();
         }
-      );
+      });
+      
+      await audioPlayer.play();
       
     } catch (error) {
       console.error('Error playing audio:', error);
@@ -912,6 +925,7 @@ export function ChatScreen({ route }) {
                 ]}>
                   <TouchableOpacity
                   onLongPress={isSelectionMode ? () => toggleMessageSelection(message.id) : () => deleteMessage(message.id, isMe)}
+                  onPress={isSelectionMode ? () => toggleMessageSelection(message.id) : undefined}
                   style={[
                     styles.msg, 
                     isMe ? styles.msgMe : styles.msgThem, 
@@ -988,21 +1002,17 @@ export function ChatScreen({ route }) {
                   </View>
                 ) : isVideo && message.video_url ? (
                   <View>
-                            <TouchableOpacity 
-                              onPress={isSelectionMode ? () => toggleMessageSelection(message.id) : undefined}
-                              onLongPress={() => toggleMessageSelection(message.id)}
-                            >
-                              <VideoView
-                                source={{ uri: message.video_url }}
-                                style={styles.videoMessage}
-                                nativeControls
-                                contentFit="contain"
-                                shouldPlay={false}
-                              />
-                              <Text style={[styles.videoCaption, { color: isMe ? 'white' : theme.text }]}>
-                                {message.content}
-                              </Text>
-                            </TouchableOpacity>
+                    <View style={styles.videoContainer}>
+                      <Video
+                        source={{ uri: message.video_url }}
+                        style={styles.videoMessage}
+                        useNativeControls={true}
+                        resizeMode="contain"
+                      />
+                    </View>
+                    <Text style={[styles.videoCaption, { color: isMe ? 'white' : theme.text }]}>
+                      {message.content}
+                    </Text>
                     <Text style={[styles.messageTime, { color: isMe ? 'rgba(255,255,255,0.7)' : theme.textSecondary }]}>
                       {formatTime(message.created_at)}
                     </Text>
@@ -1187,11 +1197,12 @@ const styles = StyleSheet.create({
     marginTop: 1
   },
   videoMessage: { 
-    width: 200, 
+    width: 250, 
     maxWidth: '100%', 
-    height: 150,
+    height: 180,
     borderRadius: 8, 
-    marginBottom: 1 
+    marginBottom: 1,
+    backgroundColor: '#000'
   },
   videoCaption: { 
     fontSize: 12, 
