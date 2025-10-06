@@ -89,6 +89,19 @@ export function MenuScreen() {
 
           <TouchableOpacity 
             style={[styles.menuItem, { borderBottomColor: theme.border }]} 
+            onPress={() => navigation.navigate('AIAgents')}
+          >
+            <View style={styles.menuItemContent}>
+              <View style={[styles.iconContainer, { backgroundColor: theme.primary + '20' }]}>
+                <Ionicons name="logo-reddit" size={18} color={theme.primary} />
+              </View>
+              <Text style={[styles.menuText, { color: theme.text }]}>AI Agents</Text>
+              <Text style={[styles.menuArrow, { color: theme.textSecondary }]}>›</Text>
+            </View>
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={[styles.menuItem, { borderBottomColor: theme.border }]} 
             onPress={() => navigation.navigate('Profile')}
           >
             <View style={styles.menuItemContent}>

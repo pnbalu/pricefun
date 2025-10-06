@@ -1,5 +1,6 @@
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
+import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 
 // Configure notification behavior
@@ -57,12 +58,26 @@ export class NotificationService {
         return null;
       }
 
-      const token = await Notifications.getExpoPushTokenAsync();
+      // Check if we have a valid project ID
+      const projectId = Constants.expoConfig?.extra?.eas?.projectId;
+      
+      if (!projectId || projectId === 'your-project-id-here') {
+        console.log('📱 Project ID not configured - using local notifications only');
+        console.log('💡 To enable remote push notifications, configure your EAS project ID in app.json');
+        return 'local-notifications-enabled';
+      }
+
+      // Try to get the Expo push token
+      const token = await Notifications.getExpoPushTokenAsync({
+        projectId: projectId
+      });
+      
       console.log('📱 Expo Push Token:', token.data);
       return token.data;
     } catch (error) {
       console.error('Error getting push token:', error);
-      return null;
+      console.log('📱 Falling back to local notifications only');
+      return 'local-notifications-enabled';
     }
   }
 

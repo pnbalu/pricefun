@@ -13,6 +13,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
 import { useTheme } from '../context/ThemeContext';
+import { AgentSelectionCard } from '../components/AgentSelectionCard';
 import * as ImagePicker from 'expo-image-picker';
 
 export function CreateGroupScreen({ navigation }) {
@@ -20,12 +21,15 @@ export function CreateGroupScreen({ navigation }) {
   const [groupName, setGroupName] = useState('');
   const [groupDescription, setGroupDescription] = useState('');
   const [selectedMembers, setSelectedMembers] = useState(new Set());
+  const [selectedAgents, setSelectedAgents] = useState(new Set());
   const [availableUsers, setAvailableUsers] = useState([]);
+  const [availableAgents, setAvailableAgents] = useState([]);
   const [groupPhoto, setGroupPhoto] = useState(null);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     loadAvailableUsers();
+    loadAvailableAgents();
   }, []);
 
   const loadAvailableUsers = async () => {
@@ -47,6 +51,26 @@ export function CreateGroupScreen({ navigation }) {
     }
   };
 
+  const loadAvailableAgents = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { data, error } = await supabase
+        .from('ai_agents')
+        .select('*')
+        .eq('user_id', user.id)
+        .eq('is_active', true)
+        .order('agent_name');
+
+      if (error) throw error;
+      setAvailableAgents(data || []);
+    } catch (error) {
+      console.error('Error loading agents:', error);
+      Alert.alert('Error', 'Failed to load AI agents');
+    }
+  };
+
   const toggleMemberSelection = (userId) => {
     const newSelected = new Set(selectedMembers);
     if (newSelected.has(userId)) {
@@ -55,6 +79,16 @@ export function CreateGroupScreen({ navigation }) {
       newSelected.add(userId);
     }
     setSelectedMembers(newSelected);
+  };
+
+  const toggleAgentSelection = (agentId) => {
+    const newSelected = new Set(selectedAgents);
+    if (newSelected.has(agentId)) {
+      newSelected.delete(agentId);
+    } else {
+      newSelected.add(agentId);
+    }
+    setSelectedAgents(newSelected);
   };
 
   const pickGroupPhoto = async () => {
@@ -173,6 +207,20 @@ export function CreateGroupScreen({ navigation }) {
 
       if (membersError) throw membersError;
 
+      // Add selected agents
+      if (selectedAgents.size > 0) {
+        const agentParticipants = Array.from(selectedAgents).map(agentId => ({
+          chat_id: chat.id,
+          agent_id: agentId,
+        }));
+
+        const { error: agentsError } = await supabase
+          .from('agent_chat_participants')
+          .insert(agentParticipants);
+
+        if (agentsError) throw agentsError;
+      }
+
       // Send welcome message
       const { error: messageError } = await supabase
         .from('messages')
@@ -282,6 +330,32 @@ export function CreateGroupScreen({ navigation }) {
           />
         </View>
 
+        {/* AI Agents Section */}
+        {availableAgents.length > 0 && (
+          <View style={styles.agentsSection}>
+            <Text style={[styles.sectionTitle, { color: theme.text }]}>
+              Add AI Agents ({selectedAgents.size})
+            </Text>
+            <Text style={[styles.sectionSubtitle, { color: theme.textSecondary }]}>
+              Select AI agents to add to this group
+            </Text>
+            <FlatList
+              data={availableAgents}
+              renderItem={({ item: agent }) => (
+                <AgentSelectionCard
+                  agent={agent}
+                  isSelected={selectedAgents.has(agent.id)}
+                  onToggle={() => toggleAgentSelection(agent.id)}
+                />
+              )}
+              keyExtractor={(item) => item.id}
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.agentsList}
+            />
+          </View>
+        )}
+
         <TouchableOpacity
           style={[styles.createButton, { backgroundColor: theme.primary }]}
           onPress={createGroup}
@@ -342,6 +416,16 @@ const styles = StyleSheet.create({
   },
   membersSection: {
     flex: 1,
+  },
+  agentsSection: {
+    marginBottom: 24,
+  },
+  sectionSubtitle: {
+    fontSize: 14,
+    marginBottom: 12,
+  },
+  agentsList: {
+    paddingRight: 16,
   },
   sectionTitle: {
     fontSize: 16,

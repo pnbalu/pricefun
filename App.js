@@ -10,15 +10,19 @@ export default function App() {
     const setupNotifications = async () => {
       console.log('🔔 Setting up notifications...');
       
-      // Request notification permissions
-      const hasPermission = await NotificationService.requestPermissions();
-      
-      if (hasPermission) {
-        // Get and log the push token
-        await NotificationService.getExpoPushToken();
-        console.log('✅ Notifications setup complete');
-      } else {
-        console.log('❌ Notifications setup failed');
+      try {
+        // Request notification permissions
+        const hasPermission = await NotificationService.requestPermissions();
+        
+        if (hasPermission) {
+          // Get and log the push token (or local notifications status)
+          const token = await NotificationService.getExpoPushToken();
+          console.log('✅ Notifications setup complete:', token);
+        } else {
+          console.log('❌ Notifications setup failed - permissions not granted');
+        }
+      } catch (error) {
+        console.error('❌ Error setting up notifications:', error);
       }
     };
 
