@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { View, FlatList, TouchableOpacity, StyleSheet, KeyboardAvoidingView, Platform, Alert, Image, Text, TextInput, Modal } from 'react-native';
+import { View, FlatList, TouchableOpacity, StyleSheet, KeyboardAvoidingView, Platform, Alert, Image, Text, TextInput, Modal, Keyboard } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useHeaderHeight } from '@react-navigation/elements';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
@@ -194,11 +194,35 @@ export function ChatScreen({ route }) {
     };
 
     const subscription = AppState.addEventListener('change', handleAppStateChange);
+
+    // Set up keyboard listeners for Android
+    const keyboardDidShowListener = Keyboard.addListener(
+      'keyboardDidShow',
+      () => {
+        if (Platform.OS === 'android') {
+          // Small delay to ensure keyboard is fully shown
+          setTimeout(() => {
+            if (flatListRef.current && messages.length > 0) {
+              flatListRef.current.scrollToEnd({ animated: true });
+            }
+          }, 100);
+        }
+      }
+    );
+
+    const keyboardDidHideListener = Keyboard.addListener(
+      'keyboardDidHide',
+      () => {
+        // Optional: Handle keyboard hide if needed
+      }
+    );
     
     return () => {
       subscription?.remove();
+      keyboardDidShowListener?.remove();
+      keyboardDidHideListener?.remove();
     };
-  }, []);
+  }, [messages.length]);
 
   useEffect(() => {
     loadChatTitle();
@@ -1059,8 +1083,8 @@ export function ChatScreen({ route }) {
     <SafeAreaView style={{ flex: 1, backgroundColor: theme.background }}>
       <KeyboardAvoidingView
         style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? headerHeight : 0}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'padding'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? headerHeight : headerHeight + 20}
       >
         <FlatList
           ref={flatListRef}
@@ -1290,6 +1314,15 @@ export function ChatScreen({ route }) {
                     onChangeText={setText}
                     returnKeyType="send"
                     onSubmitEditing={send}
+                    multiline={false}
+                    blurOnSubmit={false}
+                    onFocus={() => {
+                      if (Platform.OS === 'android') {
+                        setTimeout(() => {
+                          flatListRef.current?.scrollToEnd({ animated: true });
+                        }, 300);
+                      }
+                    }}
                     style={[styles.input, { 
                       color: theme.text, 
                       backgroundColor: theme.surface,
@@ -1415,6 +1448,7 @@ const styles = StyleSheet.create({
   inputBar: { 
     padding: 12, 
     borderTopWidth: 1,
+    paddingBottom: Platform.OS === 'android' ? 8 : 12,
   },
   inputRow: {
     flexDirection: 'row',
